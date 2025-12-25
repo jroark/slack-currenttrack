@@ -62,6 +62,8 @@ PLAYER=spotify npm start
 
 Spotify advertisements are ignored, so the status clears (if enabled) instead of showing ad metadata.
 
+Progress bar: include `%pb%` in `SLACK_STATUS_EMOJI` to render a 9-slot bar at the start of the status text based on elapsed time, e.g. `SLACK_STATUS_EMOJI="%pb%"` yields `[|--------]` at the start and `[----|----]` around halfway. The `%pb%` token is stripped from the emoji value to avoid Slack emoji syntax errors.
+
 To test formatting without touching Slack:
 
 ```bash

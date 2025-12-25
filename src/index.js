@@ -81,10 +81,12 @@ tell application "Music"
   set trackName to name of current track
   set trackArtist to artist of current track
   set trackAlbum to album of current track
+  set trackDuration to duration of current track
+  set trackPosition to player position
   set trackName to my cleanupValue(trackName)
   set trackArtist to my cleanupValue(trackArtist)
   set trackAlbum to my cleanupValue(trackAlbum)
-  return "${PLAYER_STATES.PLAYING}${SCRIPT_DELIMITER}" & trackArtist & "${SCRIPT_DELIMITER}" & trackName & "${SCRIPT_DELIMITER}" & trackAlbum
+  return "${PLAYER_STATES.PLAYING}${SCRIPT_DELIMITER}" & trackArtist & "${SCRIPT_DELIMITER}" & trackName & "${SCRIPT_DELIMITER}" & trackAlbum & "${SCRIPT_DELIMITER}" & trackDuration & "${SCRIPT_DELIMITER}" & trackPosition
 end tell
 
 on cleanupValue(theValue)
@@ -103,7 +105,7 @@ end cleanupValue
       return null;
     }
 
-    const [state, artist, title, album] = normalized.split(SCRIPT_DELIMITER);
+    const [state, artist, title, album, duration, position] = normalized.split(SCRIPT_DELIMITER);
     if (state !== PLAYER_STATES.PLAYING) {
       return null;
     }
@@ -112,6 +114,8 @@ end cleanupValue
       artist: artist || 'Unknown Artist',
       title: title || 'Unknown Track',
       album: album || '',
+      durationMs: toMilliseconds(duration, 1000),
+      positionMs: toMilliseconds(position, 1000),
     };
   } catch (error) {
     console.error('Failed to read Apple Music track:', error.message);
@@ -131,10 +135,12 @@ tell application "Spotify"
   set trackName to name of current track
   set trackArtist to artist of current track
   set trackAlbum to album of current track
+  set trackDuration to duration of current track
+  set trackPosition to player position
   set trackName to my cleanupValue(trackName)
   set trackArtist to my cleanupValue(trackArtist)
   set trackAlbum to my cleanupValue(trackAlbum)
-  return "${PLAYER_STATES.PLAYING}${SCRIPT_DELIMITER}" & trackArtist & "${SCRIPT_DELIMITER}" & trackName & "${SCRIPT_DELIMITER}" & trackAlbum
+  return "${PLAYER_STATES.PLAYING}${SCRIPT_DELIMITER}" & trackArtist & "${SCRIPT_DELIMITER}" & trackName & "${SCRIPT_DELIMITER}" & trackAlbum & "${SCRIPT_DELIMITER}" & trackDuration & "${SCRIPT_DELIMITER}" & trackPosition
 end tell
 
 on cleanupValue(theValue)
@@ -153,7 +159,7 @@ end cleanupValue
       return null;
     }
 
-    const [state, artist, title, album] = normalized.split(SCRIPT_DELIMITER);
+    const [state, artist, title, album, duration, position] = normalized.split(SCRIPT_DELIMITER);
     if (state !== PLAYER_STATES.PLAYING) {
       return null;
     }
@@ -165,6 +171,8 @@ end cleanupValue
       artist: artist || 'Unknown Artist',
       title: title || 'Unknown Track',
       album: album || '',
+      durationMs: toMilliseconds(duration, 1),
+      positionMs: toMilliseconds(position, 1000),
     };
   } catch (error) {
     console.error('Failed to read Spotify track:', error.message);
@@ -181,7 +189,11 @@ function formatStatus(track) {
   if (INCLUDE_ALBUM && cleanAlbum) {
     text += ` (${cleanAlbum})`;
   }
-  return clampStatusText(`${STATUS_PREFIX}${text}${STATUS_SUFFIX}`.trim());
+  const progressBar = STATUS_EMOJI.includes('%pb%')
+    ? buildProgressBar(track.positionMs, track.durationMs)
+    : '';
+  const progressPrefix = progressBar ? `${progressBar} ` : '';
+  return clampStatusText(`${progressPrefix}${STATUS_PREFIX}${text}${STATUS_SUFFIX}`.trim());
 }
 
 async function updateSlackStatus(statusText, statusEmoji) {
@@ -302,6 +314,26 @@ function callSlackApiMultipart(path, body, boundary) {
 
 function sanitizeText(value) {
   return value.replace(/\\s+/g, ' ').trim();
+}
+
+function toMilliseconds(value, multiplier) {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.max(0, Math.round(parsed * multiplier));
+}
+
+function buildProgressBar(positionMs, durationMs) {
+  if (!Number.isFinite(positionMs) || !Number.isFinite(durationMs) || durationMs <= 0) {
+    return '';
+  }
+  const slots = 9;
+  const ratio = Math.min(Math.max(positionMs / durationMs, 0), 1);
+  const index = Math.floor(ratio * (slots - 1));
+  const chars = Array.from({ length: slots }, () => '-');
+  chars[index] = '|';
+  return `[${chars.join('')}]`;
 }
 
 function isSpotifyAdvertisement(artist, title, album) {
@@ -612,8 +644,9 @@ async function main() {
   while (true) {
     try {
       const track = await readCurrentTrack();
+      const statusEmoji = STATUS_EMOJI.replace(/%pb%/g, '').trim();
       const payload = track
-        ? { status_text: formatStatus(track), status_emoji: STATUS_EMOJI }
+        ? { status_text: formatStatus(track), status_emoji: statusEmoji }
         : CLEAR_STATUS_ON_PAUSE
           ? { status_text: '', status_emoji: '' }
           : null;
