@@ -71,23 +71,27 @@ async function readCurrentTrack() {
 
 async function readAppleMusicTrack() {
   const appleScript = `
-if application "Music" is not running then
+try
+  tell application "Music"
+    if it is not running then
+      return "${PLAYER_STATES.STOPPED}"
+    end if
+    if player state is not playing then
+      return "${PLAYER_STATES.STOPPED}"
+    end if
+    set trackName to name of current track
+    set trackArtist to artist of current track
+    set trackAlbum to album of current track
+    set trackDuration to duration of current track
+    set trackPosition to player position
+    set trackName to my cleanupValue(trackName)
+    set trackArtist to my cleanupValue(trackArtist)
+    set trackAlbum to my cleanupValue(trackAlbum)
+    return "${PLAYER_STATES.PLAYING}${SCRIPT_DELIMITER}" & trackArtist & "${SCRIPT_DELIMITER}" & trackName & "${SCRIPT_DELIMITER}" & trackAlbum & "${SCRIPT_DELIMITER}" & trackDuration & "${SCRIPT_DELIMITER}" & trackPosition
+  end tell
+on error
   return "${PLAYER_STATES.STOPPED}"
-end if
-tell application "Music"
-  if player state is not playing then
-    return "${PLAYER_STATES.STOPPED}"
-  end if
-  set trackName to name of current track
-  set trackArtist to artist of current track
-  set trackAlbum to album of current track
-  set trackDuration to duration of current track
-  set trackPosition to player position
-  set trackName to my cleanupValue(trackName)
-  set trackArtist to my cleanupValue(trackArtist)
-  set trackAlbum to my cleanupValue(trackAlbum)
-  return "${PLAYER_STATES.PLAYING}${SCRIPT_DELIMITER}" & trackArtist & "${SCRIPT_DELIMITER}" & trackName & "${SCRIPT_DELIMITER}" & trackAlbum & "${SCRIPT_DELIMITER}" & trackDuration & "${SCRIPT_DELIMITER}" & trackPosition
-end tell
+end try
 
 on cleanupValue(theValue)
   if theValue is missing value then
@@ -125,23 +129,27 @@ end cleanupValue
 
 async function readSpotifyTrack() {
   const appleScript = `
-if application "Spotify" is not running then
+try
+  tell application "Spotify"
+    if it is not running then
+      return "${PLAYER_STATES.STOPPED}"
+    end if
+    if player state is not playing then
+      return "${PLAYER_STATES.STOPPED}"
+    end if
+    set trackName to name of current track
+    set trackArtist to artist of current track
+    set trackAlbum to album of current track
+    set trackDuration to duration of current track
+    set trackPosition to player position
+    set trackName to my cleanupValue(trackName)
+    set trackArtist to my cleanupValue(trackArtist)
+    set trackAlbum to my cleanupValue(trackAlbum)
+    return "${PLAYER_STATES.PLAYING}${SCRIPT_DELIMITER}" & trackArtist & "${SCRIPT_DELIMITER}" & trackName & "${SCRIPT_DELIMITER}" & trackAlbum & "${SCRIPT_DELIMITER}" & trackDuration & "${SCRIPT_DELIMITER}" & trackPosition
+  end tell
+on error
   return "${PLAYER_STATES.STOPPED}"
-end if
-tell application "Spotify"
-  if player state is not playing then
-    return "${PLAYER_STATES.STOPPED}"
-  end if
-  set trackName to name of current track
-  set trackArtist to artist of current track
-  set trackAlbum to album of current track
-  set trackDuration to duration of current track
-  set trackPosition to player position
-  set trackName to my cleanupValue(trackName)
-  set trackArtist to my cleanupValue(trackArtist)
-  set trackAlbum to my cleanupValue(trackAlbum)
-  return "${PLAYER_STATES.PLAYING}${SCRIPT_DELIMITER}" & trackArtist & "${SCRIPT_DELIMITER}" & trackName & "${SCRIPT_DELIMITER}" & trackAlbum & "${SCRIPT_DELIMITER}" & trackDuration & "${SCRIPT_DELIMITER}" & trackPosition
-end tell
+end try
 
 on cleanupValue(theValue)
   if theValue is missing value then
@@ -489,29 +497,33 @@ async function exportAlbumArt(track) {
 
 async function exportAppleMusicAlbumArt() {
   const appleScript = `
-if application "Music" is not running then
-  return ""
-end if
-tell application "Music"
-  if player state is not playing then
-    return ""
-  end if
-  if (count of artworks of current track) is 0 then
-    return ""
-  end if
-  set artData to data of artwork 1 of current track
-end tell
-set tmpPath to do shell script "mktemp -t slack-currenttrack-artwork"
 try
-  set outFile to open for access POSIX file tmpPath with write permission
-  set eof outFile to 0
-  write artData to outFile
-  close access outFile
-  return tmpPath
-on error
+  tell application "Music"
+    if it is not running then
+      return ""
+    end if
+    if player state is not playing then
+      return ""
+    end if
+    if (count of artworks of current track) is 0 then
+      return ""
+    end if
+    set artData to data of artwork 1 of current track
+  end tell
+  set tmpPath to do shell script "mktemp -t slack-currenttrack-artwork"
   try
-    close access POSIX file tmpPath
+    set outFile to open for access POSIX file tmpPath with write permission
+    set eof outFile to 0
+    write artData to outFile
+    close access outFile
+    return tmpPath
+  on error
+    try
+      close access POSIX file tmpPath
+    end try
+    return ""
   end try
+on error
   return ""
 end try
 `;
@@ -528,19 +540,23 @@ end try
 
 async function exportSpotifyAlbumArt() {
   const appleScript = `
-if application "Spotify" is not running then
-  return ""
-end if
-tell application "Spotify"
-  if player state is not playing then
+try
+  tell application "Spotify"
+    if it is not running then
+      return ""
+    end if
+    if player state is not playing then
+      return ""
+    end if
+    set artUrl to artwork url of current track
+  end tell
+  if artUrl is missing value then
     return ""
   end if
-  set artUrl to artwork url of current track
-end tell
-if artUrl is missing value then
+  return artUrl
+on error
   return ""
-end if
-return artUrl
+end try
 `;
 
   try {
