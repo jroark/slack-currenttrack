@@ -60,6 +60,8 @@ Example (use Spotify explicitly):
 PLAYER=spotify npm start
 ```
 
+Spotify advertisements are ignored, so the status clears (if enabled) instead of showing ad metadata.
+
 To test formatting without touching Slack:
 
 ```bash

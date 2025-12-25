@@ -157,6 +157,9 @@ end cleanupValue
     if (state !== PLAYER_STATES.PLAYING) {
       return null;
     }
+    if (isSpotifyAdvertisement(artist, title, album)) {
+      return null;
+    }
     return {
       source: 'spotify',
       artist: artist || 'Unknown Artist',
@@ -299,6 +302,17 @@ function callSlackApiMultipart(path, body, boundary) {
 
 function sanitizeText(value) {
   return value.replace(/\\s+/g, ' ').trim();
+}
+
+function isSpotifyAdvertisement(artist, title, album) {
+  const fields = [artist, title, album]
+    .filter((value) => typeof value === 'string')
+    .map((value) => value.trim().toLowerCase());
+  if (fields.length === 0) {
+    return false;
+  }
+  return fields.some((value) => value.includes('advertisement'))
+    || fields.some((value) => value === 'spotify');
 }
 
 function normalizePlayer(value) {
