@@ -36,9 +36,12 @@ All configuration is handled through environment variables. Defaults are shown i
 | `CLEAR_STATUS_ON_PAUSE` (`true`) | If `true`, clear the status when playback stops. Set to `false` to leave the last track in place. |
 | `INCLUDE_ALBUM` (`false`) | Append the album title to the Slack status. |
 | `SLACK_STATUS_PREFIX` / `SLACK_STATUS_SUFFIX` (empty) | Optional text to add before or after the generated status. |
+| `UPDATE_PROFILE_PHOTO` (`false`) | If `true`, update your Slack profile photo with the current album artwork when the track changes and restore it when playback stops. |
+| `STATUS_MAX_LENGTH` (`100`) | Maximum length for the Slack status text; longer values are truncated with `...` to avoid `too_long` errors. |
 | `POLL_INTERVAL_MS` (`15000`) | How often (in milliseconds) to poll Apple Music for the current track. |
 | `DRY_RUN` (`false`) | Log the status changes (and write the cache file) without calling Slack; `SLACK_TOKEN` is optional in this mode. |
 | `STATUS_CACHE_FILE` (`~/.slack-currenttrack-status.json`) | JSON file that stores the last status text/emoji. Set to an empty string to disable writing. |
+| `PROFILE_PHOTO_CACHE_FILE` (`~/.slack-currenttrack-profile-photo`) | Where to store your default Slack profile photo so it can be restored. Set to an empty string to disable caching/restoring. |
 
 Example (include the album name, custom emoji, slower polling):
 
@@ -55,6 +58,8 @@ To test formatting without touching Slack:
 ```bash
 DRY_RUN=true npm start
 ```
+
+Profile photo updates call `users.setPhoto`; ensure your token includes any additional scopes Slack requires (for example `users.profile:read` for caching/restoring and `users.profile:write` or `users:write` for updates). If you cannot add read scope, set `PROFILE_PHOTO_CACHE_FILE` to an existing image to enable restores without fetching from Slack.
 
 ## Development
 
