@@ -1,0 +1,20 @@
+{
+  "name": "slack-currenttrack",
+  "version": "0.1.0",
+  "description": "Updates your Slack status with the current Apple Music track",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "bin": {
+    "slack-currenttrack": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "lint": "node --check src/index.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {}
+}
