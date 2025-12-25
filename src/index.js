@@ -18,6 +18,7 @@ const STATUS_SUFFIX = process.env.SLACK_STATUS_SUFFIX || '';
 const DRY_RUN = readBooleanFromEnv('DRY_RUN', false);
 const UPDATE_PROFILE_PHOTO = readBooleanFromEnv('UPDATE_PROFILE_PHOTO', false);
 const STATUS_MAX_LENGTH = readNumberFromEnv('STATUS_MAX_LENGTH', 100);
+const PLAYER = normalizePlayer(process.env.PLAYER || 'music');
 const SLACK_TOKEN = process.env.SLACK_TOKEN;
 const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.slack-currenttrack-status.json');
 const STATUS_CACHE_FILE = process.env.STATUS_CACHE_FILE === ''
@@ -34,7 +35,7 @@ let shuttingDown = false;
 let lastPayloadRef = null;
 
 if (process.platform !== 'darwin') {
-  console.error('slack-currenttrack only works on macOS because it talks to Apple Music via AppleScript.');
+  console.error('slack-currenttrack only works on macOS because it talks to Apple Music or Spotify via AppleScript.');
   process.exit(1);
 }
 
@@ -54,6 +55,21 @@ const PLAYER_STATES = {
 };
 
 async function readCurrentTrack() {
+  if (PLAYER === 'music') {
+    return readAppleMusicTrack();
+  }
+  if (PLAYER === 'spotify') {
+    return readSpotifyTrack();
+  }
+
+  const spotifyTrack = await readSpotifyTrack();
+  if (spotifyTrack) {
+    return spotifyTrack;
+  }
+  return readAppleMusicTrack();
+}
+
+async function readAppleMusicTrack() {
   const appleScript = `
 if application "Music" is not running then
   return "${PLAYER_STATES.STOPPED}"
@@ -92,12 +108,63 @@ end cleanupValue
       return null;
     }
     return {
+      source: 'music',
       artist: artist || 'Unknown Artist',
       title: title || 'Unknown Track',
       album: album || '',
     };
   } catch (error) {
     console.error('Failed to read Apple Music track:', error.message);
+    return null;
+  }
+}
+
+async function readSpotifyTrack() {
+  const appleScript = `
+if application "Spotify" is not running then
+  return "${PLAYER_STATES.STOPPED}"
+end if
+tell application "Spotify"
+  if player state is not playing then
+    return "${PLAYER_STATES.STOPPED}"
+  end if
+  set trackName to name of current track
+  set trackArtist to artist of current track
+  set trackAlbum to album of current track
+  set trackName to my cleanupValue(trackName)
+  set trackArtist to my cleanupValue(trackArtist)
+  set trackAlbum to my cleanupValue(trackAlbum)
+  return "${PLAYER_STATES.PLAYING}${SCRIPT_DELIMITER}" & trackArtist & "${SCRIPT_DELIMITER}" & trackName & "${SCRIPT_DELIMITER}" & trackAlbum
+end tell
+
+on cleanupValue(theValue)
+  if theValue is missing value then
+    return ""
+  end if
+  set theValue to do shell script "printf %s " & quoted form of theValue
+  return theValue
+end cleanupValue
+`;
+
+  try {
+    const { stdout } = await execFileAsync('osascript', ['-e', appleScript]);
+    const normalized = stdout.trim();
+    if (!normalized || normalized === PLAYER_STATES.STOPPED) {
+      return null;
+    }
+
+    const [state, artist, title, album] = normalized.split(SCRIPT_DELIMITER);
+    if (state !== PLAYER_STATES.PLAYING) {
+      return null;
+    }
+    return {
+      source: 'spotify',
+      artist: artist || 'Unknown Artist',
+      title: title || 'Unknown Track',
+      album: album || '',
+    };
+  } catch (error) {
+    console.error('Failed to read Spotify track:', error.message);
     return null;
   }
 }
@@ -234,6 +301,21 @@ function sanitizeText(value) {
   return value.replace(/\\s+/g, ' ').trim();
 }
 
+function normalizePlayer(value) {
+  const normalized = value.toLowerCase();
+  if (['music', 'apple-music', 'applemusic', 'apple_music'].includes(normalized)) {
+    return 'music';
+  }
+  if (normalized === 'spotify') {
+    return 'spotify';
+  }
+  if (normalized === 'auto') {
+    return 'auto';
+  }
+  console.warn(`Unknown PLAYER value "${value}". Falling back to "music".`);
+  return 'music';
+}
+
 function clampStatusText(value) {
   if (!value) {
     return value;
@@ -352,7 +434,14 @@ async function cacheDefaultProfilePhoto() {
   return PROFILE_PHOTO_CACHE_FILE;
 }
 
-async function exportAlbumArt() {
+async function exportAlbumArt(track) {
+  if (track && track.source === 'spotify') {
+    return exportSpotifyAlbumArt();
+  }
+  return exportAppleMusicAlbumArt();
+}
+
+async function exportAppleMusicAlbumArt() {
   const appleScript = `
 if application "Music" is not running then
   return ""
@@ -386,7 +475,42 @@ end try
     const normalized = stdout.trim();
     return normalized ? normalized : null;
   } catch (error) {
-    console.error('Failed to export album artwork:', error.message);
+    console.error('Failed to export Apple Music artwork:', error.message);
+    return null;
+  }
+}
+
+async function exportSpotifyAlbumArt() {
+  const appleScript = `
+if application "Spotify" is not running then
+  return ""
+end if
+tell application "Spotify"
+  if player state is not playing then
+    return ""
+  end if
+  set artUrl to artwork url of current track
+end tell
+if artUrl is missing value then
+  return ""
+end if
+return artUrl
+`;
+
+  try {
+    const { stdout } = await execFileAsync('osascript', ['-e', appleScript]);
+    const normalized = stdout.trim();
+    if (!normalized) {
+      return null;
+    }
+    const imageData = await downloadImage(normalized);
+    const { extension } = detectImageType(imageData);
+    const filename = `slack-currenttrack-artwork-${Date.now()}${extension}`;
+    const targetPath = path.join(os.tmpdir(), filename);
+    await fs.writeFile(targetPath, imageData);
+    return targetPath;
+  } catch (error) {
+    console.error('Failed to export Spotify artwork:', error.message);
     return null;
   }
 }
@@ -464,7 +588,12 @@ async function deleteFileIfExists(targetPath) {
 async function main() {
   let lastPayload = null;
   let lastTrackKey = null;
-  console.log(`Watching Apple Music every ${POLL_INTERVAL_MS}ms...`);
+  const playerLabel = PLAYER === 'auto'
+    ? 'Spotify or Apple Music'
+    : PLAYER === 'spotify'
+      ? 'Spotify'
+      : 'Apple Music';
+  console.log(`Watching ${playerLabel} every ${POLL_INTERVAL_MS}ms...`);
 
   while (true) {
     try {
@@ -491,7 +620,7 @@ async function main() {
       }
 
       if (track) {
-        const trackKey = `${track.artist}||${track.title}||${track.album}`;
+        const trackKey = `${track.source}||${track.artist}||${track.title}||${track.album}`;
         if (UPDATE_PROFILE_PHOTO && trackKey !== lastTrackKey) {
           if (DRY_RUN) {
             console.log('[dry-run] Would update Slack profile photo with album artwork.');
@@ -509,7 +638,7 @@ async function main() {
                 }
               }
             }
-            const artPath = await exportAlbumArt();
+            const artPath = await exportAlbumArt(track);
             if (artPath) {
               await updateSlackProfilePhoto(artPath);
               console.log('Updated Slack profile photo with album artwork.');
