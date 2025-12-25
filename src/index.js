@@ -71,11 +71,11 @@ async function readCurrentTrack() {
 
 async function readAppleMusicTrack() {
   const appleScript = `
+if application "Music" is not running then
+  return "${PLAYER_STATES.STOPPED}"
+end if
 try
   tell application "Music"
-    if it is not running then
-      return "${PLAYER_STATES.STOPPED}"
-    end if
     if player state is not playing then
       return "${PLAYER_STATES.STOPPED}"
     end if
@@ -129,11 +129,11 @@ end cleanupValue
 
 async function readSpotifyTrack() {
   const appleScript = `
+if application "Spotify" is not running then
+  return "${PLAYER_STATES.STOPPED}"
+end if
 try
   tell application "Spotify"
-    if it is not running then
-      return "${PLAYER_STATES.STOPPED}"
-    end if
     if player state is not playing then
       return "${PLAYER_STATES.STOPPED}"
     end if
@@ -497,11 +497,11 @@ async function exportAlbumArt(track) {
 
 async function exportAppleMusicAlbumArt() {
   const appleScript = `
+if application "Music" is not running then
+  return ""
+end if
 try
   tell application "Music"
-    if it is not running then
-      return ""
-    end if
     if player state is not playing then
       return ""
     end if
@@ -540,11 +540,11 @@ end try
 
 async function exportSpotifyAlbumArt() {
   const appleScript = `
+if application "Spotify" is not running then
+  return ""
+end if
 try
   tell application "Spotify"
-    if it is not running then
-      return ""
-    end if
     if player state is not playing then
       return ""
     end if
