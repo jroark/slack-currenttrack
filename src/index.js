@@ -28,6 +28,11 @@ const PROFILE_PHOTO_CACHE_FILE = process.env.PROFILE_PHOTO_CACHE_FILE === ''
   ? null
   : (process.env.PROFILE_PHOTO_CACHE_FILE || DEFAULT_PROFILE_PHOTO_PATH);
 
+let profilePhotoUpdated = false;
+let profilePhotoCacheUnavailable = false;
+let shuttingDown = false;
+let lastPayloadRef = null;
+
 if (process.platform !== 'darwin') {
   console.error('slack-currenttrack only works on macOS because it talks to Apple Music via AppleScript.');
   process.exit(1);
@@ -459,8 +464,6 @@ async function deleteFileIfExists(targetPath) {
 async function main() {
   let lastPayload = null;
   let lastTrackKey = null;
-  let profilePhotoUpdated = false;
-  let profilePhotoCacheUnavailable = false;
   console.log(`Watching Apple Music every ${POLL_INTERVAL_MS}ms...`);
 
   while (true) {
@@ -480,9 +483,11 @@ async function main() {
           console.log(`Updated Slack status to: ${payload.status_text || '(cleared)'}`);
         }
         lastPayload = payload;
+        lastPayloadRef = payload;
         await persistPayload(payload);
       } else if (!payload) {
         lastPayload = null;
+        lastPayloadRef = null;
       }
 
       if (track) {
@@ -540,10 +545,54 @@ async function main() {
   }
 }
 
-process.on('SIGINT', () => {
-  console.log('Exiting slack-currenttrack');
+async function shutdown(signal) {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  console.log(`Exiting slack-currenttrack (${signal})`);
+
+  let hasCachedProfilePhoto = false;
+  if (PROFILE_PHOTO_CACHE_FILE) {
+    hasCachedProfilePhoto = await fileExists(PROFILE_PHOTO_CACHE_FILE);
+  }
+
+  if (UPDATE_PROFILE_PHOTO && (profilePhotoUpdated || hasCachedProfilePhoto)) {
+    if (DRY_RUN) {
+      console.log('[dry-run] Would restore the default Slack profile photo.');
+    } else {
+      try {
+        const restored = await restoreDefaultProfilePhoto();
+        if (restored) {
+          console.log('Restored the default Slack profile photo.');
+        } else {
+          console.log('No cached default profile photo to restore.');
+        }
+      } catch (error) {
+        console.error('Failed to restore the default Slack profile photo:', error.message);
+      }
+    }
+  }
+
+  if (CLEAR_STATUS_ON_PAUSE && lastPayloadRef) {
+    if (DRY_RUN) {
+      console.log('[dry-run] Would clear Slack status.');
+    } else {
+      try {
+        await updateSlackStatus('', '');
+        await persistPayload(null);
+        console.log('Cleared Slack status.');
+      } catch (error) {
+        console.error('Failed to clear Slack status:', error.message);
+      }
+    }
+  }
+
   process.exit(0);
-});
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 main().catch((error) => {
   console.error('Fatal error:', error);
