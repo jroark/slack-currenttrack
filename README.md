@@ -4,6 +4,11 @@ Keep your Slack status in sync with whatever Apple Music or Spotify is currently
 
 The script polls Apple Music or Spotify with AppleScript, builds a status text (for example `Daft Punk — Digital Love`), and pushes it to Slack through `users.profile.set`. When playback stops it optionally clears the status.
 
+## Screenshots
+
+![Slack status with current track](Screenshot%202025-12-25%20at%204.10.21%E2%80%AFPM.png)
+![Slack profile photo with album artwork](Screenshot%202025-12-25%20at%204.11.18%E2%80%AFPM.png)
+
 ## Inspiration
 
 This project is a modern take on my old Pidgin-CurrentTrack plugin for Gaim/Pidgin, which updated user info, available/away messages, and buddy icons from the currently playing track across multiple players. See the original project on SourceForge: https://sourceforge.net/projects/currenttrack/. This repo adapts the same idea to Slack on macOS with AppleScript and the Slack Web API.
