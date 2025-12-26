@@ -40,7 +40,7 @@ All configuration is handled through environment variables. Defaults are shown i
 
 | Variable | Description |
 | --- | --- |
-| `SLACK_TOKEN` | **Required.** Slack user token with `users.profile:write`. |
+| `SLACK_TOKEN` | **Required.** Slack user token with `users.profile:write` and `users.profile:read`. |
 | `SLACK_STATUS_EMOJI` (`:musical_note:`) | Emoji to use while music is playing. |
 | `CLEAR_STATUS_ON_PAUSE` (`true`) | If `true`, clear the status when playback stops. Set to `false` to leave the last track in place. |
 | `STATUS_FORMAT` (unset) | Custom format string for status text using tokens like `%ar%`, `%so%`, `%al%`, `%pb%`, `%bn%`, `%en%`, plus optional `{p}...{/p}` and `{q}...{/q}` blocks. |
