@@ -43,8 +43,7 @@ All configuration is handled through environment variables. Defaults are shown i
 | `SLACK_TOKEN` | **Required.** Slack user token with `users.profile:write`. |
 | `SLACK_STATUS_EMOJI` (`:musical_note:`) | Emoji to use while music is playing. |
 | `CLEAR_STATUS_ON_PAUSE` (`true`) | If `true`, clear the status when playback stops. Set to `false` to leave the last track in place. |
-| `INCLUDE_ALBUM` (`false`) | Append the album title to the Slack status. |
-| `SLACK_STATUS_PREFIX` / `SLACK_STATUS_SUFFIX` (empty) | Optional text to add before or after the generated status. |
+| `STATUS_FORMAT` (unset) | Custom format string for status text using tokens like `%ar%`, `%so%`, `%al%`, `%pb%`, `%bn%`, `%en%`, plus optional `{p}...{/p}` and `{q}...{/q}` blocks. |
 | `UPDATE_PROFILE_PHOTO` (`false`) | If `true`, update your Slack profile photo with the current album artwork when the track changes and restore it when playback stops. |
 | `STATUS_MAX_LENGTH` (`100`) | Maximum length for the Slack status text; longer values are truncated with `...` to avoid `too_long` errors. |
 | `PLAYER` (`music`) | Which player to read from: `music`, `spotify`, or `auto` (prefer Spotify, then Apple Music). |
@@ -53,12 +52,11 @@ All configuration is handled through environment variables. Defaults are shown i
 | `STATUS_CACHE_FILE` (`~/.slack-currenttrack-status.json`) | JSON file that stores the last status text/emoji. Set to an empty string to disable writing. |
 | `PROFILE_PHOTO_CACHE_FILE` (`~/.slack-currenttrack-profile-photo`) | Where to store your default Slack profile photo so it can be restored. Set to an empty string to disable caching/restoring. |
 
-Example (include the album name, custom emoji, slower polling):
+Example (custom emoji, slower polling):
 
 ```bash
 SLACK_TOKEN=xoxp-123 \
 SLACK_STATUS_EMOJI=':headphones:' \
-INCLUDE_ALBUM=true \
 POLL_INTERVAL_MS=30000 \
 npm start
 ```
@@ -71,7 +69,20 @@ PLAYER=spotify npm start
 
 Spotify advertisements are ignored, so the status clears (if enabled) instead of showing ad metadata.
 
-Progress bar: include `%pb%` in `SLACK_STATUS_EMOJI` to render a 9-slot bar at the start of the status text based on elapsed time, e.g. `SLACK_STATUS_EMOJI="%pb%"` yields `[|--------]` at the start and `[----|----]` around halfway. The `%pb%` token is stripped from the emoji value to avoid Slack emoji syntax errors.
+Progress formatting: set `STATUS_FORMAT` to customize the status text. Tokens:
+
+- `%ar%` artist, `%al%` album, `%so%` song title
+- `%bn%` beamed note, `%en%` eighth note
+- `%pb%` progress bar (9 slots, no brackets) based on elapsed time
+- `{p}...{/p}` shown when paused, `{q}...{/q}` shown when stopped/not running
+
+Example:
+
+```bash
+STATUS_FORMAT="%pb% %so% - %ar% {p}I am Paused{/p} {q}Sitting Quietly{/q}" npm start
+```
+
+If `STATUS_FORMAT` is unset, including `%pb%` in `SLACK_STATUS_EMOJI` still prepends the progress bar to the default status text.
 
 To test formatting without touching Slack:
 

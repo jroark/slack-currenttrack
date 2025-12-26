@@ -12,13 +12,11 @@ const execFileAsync = promisify(execFile);
 const POLL_INTERVAL_MS = readNumberFromEnv('POLL_INTERVAL_MS', 15000);
 const STATUS_EMOJI = process.env.SLACK_STATUS_EMOJI || ':musical_note:';
 const CLEAR_STATUS_ON_PAUSE = readBooleanFromEnv('CLEAR_STATUS_ON_PAUSE', true);
-const INCLUDE_ALBUM = readBooleanFromEnv('INCLUDE_ALBUM', false);
-const STATUS_PREFIX = process.env.SLACK_STATUS_PREFIX || '';
-const STATUS_SUFFIX = process.env.SLACK_STATUS_SUFFIX || '';
 const DRY_RUN = readBooleanFromEnv('DRY_RUN', false);
 const UPDATE_PROFILE_PHOTO = readBooleanFromEnv('UPDATE_PROFILE_PHOTO', false);
 const STATUS_MAX_LENGTH = readNumberFromEnv('STATUS_MAX_LENGTH', 100);
 const PLAYER = normalizePlayer(process.env.PLAYER || 'music');
+const STATUS_FORMAT = process.env.STATUS_FORMAT;
 const SLACK_TOKEN = process.env.SLACK_TOKEN;
 const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.slack-currenttrack-status.json');
 const STATUS_CACHE_FILE = process.env.STATUS_CACHE_FILE === ''
@@ -51,6 +49,7 @@ if (DRY_RUN && !SLACK_TOKEN) {
 const SCRIPT_DELIMITER = '||slack-currenttrack||';
 const PLAYER_STATES = {
   PLAYING: 'playing',
+  PAUSED: 'paused',
   STOPPED: 'stopped',
 };
 
@@ -63,10 +62,20 @@ async function readCurrentTrack() {
   }
 
   const spotifyTrack = await readSpotifyTrack();
-  if (spotifyTrack) {
+  if (spotifyTrack.state === PLAYER_STATES.PLAYING) {
     return spotifyTrack;
   }
-  return readAppleMusicTrack();
+  const appleTrack = await readAppleMusicTrack();
+  if (appleTrack.state === PLAYER_STATES.PLAYING) {
+    return appleTrack;
+  }
+  if (spotifyTrack.state === PLAYER_STATES.PAUSED) {
+    return spotifyTrack;
+  }
+  if (appleTrack.state === PLAYER_STATES.PAUSED) {
+    return appleTrack;
+  }
+  return { state: PLAYER_STATES.STOPPED, track: null };
 }
 
 async function readAppleMusicTrack() {
@@ -76,7 +85,19 @@ if application "Music" is not running then
 end if
 try
   tell application "Music"
-    if player state is not playing then
+    set playerState to player state
+    if playerState is not playing then
+      if playerState is paused then
+        set trackName to name of current track
+        set trackArtist to artist of current track
+        set trackAlbum to album of current track
+        set trackDuration to duration of current track
+        set trackPosition to player position
+        set trackName to my cleanupValue(trackName)
+        set trackArtist to my cleanupValue(trackArtist)
+        set trackAlbum to my cleanupValue(trackAlbum)
+        return "${PLAYER_STATES.PAUSED}${SCRIPT_DELIMITER}" & trackArtist & "${SCRIPT_DELIMITER}" & trackName & "${SCRIPT_DELIMITER}" & trackAlbum & "${SCRIPT_DELIMITER}" & trackDuration & "${SCRIPT_DELIMITER}" & trackPosition
+      end if
       return "${PLAYER_STATES.STOPPED}"
     end if
     set trackName to name of current track
@@ -106,24 +127,27 @@ end cleanupValue
     const { stdout } = await execFileAsync('osascript', ['-e', appleScript]);
     const normalized = stdout.trim();
     if (!normalized || normalized === PLAYER_STATES.STOPPED) {
-      return null;
+      return { state: PLAYER_STATES.STOPPED, track: null };
     }
 
     const [state, artist, title, album, duration, position] = normalized.split(SCRIPT_DELIMITER);
-    if (state !== PLAYER_STATES.PLAYING) {
-      return null;
+    if (state !== PLAYER_STATES.PLAYING && state !== PLAYER_STATES.PAUSED) {
+      return { state: PLAYER_STATES.STOPPED, track: null };
     }
     return {
-      source: 'music',
-      artist: artist || 'Unknown Artist',
-      title: title || 'Unknown Track',
-      album: album || '',
-      durationMs: toMilliseconds(duration, 1000),
-      positionMs: toMilliseconds(position, 1000),
+      state,
+      track: {
+        source: 'music',
+        artist: artist || 'Unknown Artist',
+        title: title || 'Unknown Track',
+        album: album || '',
+        durationMs: toMilliseconds(duration, 1000),
+        positionMs: toMilliseconds(position, 1000),
+      },
     };
   } catch (error) {
     console.error('Failed to read Apple Music track:', error.message);
-    return null;
+    return { state: PLAYER_STATES.STOPPED, track: null };
   }
 }
 
@@ -134,7 +158,19 @@ if application "Spotify" is not running then
 end if
 try
   tell application "Spotify"
-    if player state is not playing then
+    set playerState to player state
+    if playerState is not playing then
+      if playerState is paused then
+        set trackName to name of current track
+        set trackArtist to artist of current track
+        set trackAlbum to album of current track
+        set trackDuration to duration of current track
+        set trackPosition to player position
+        set trackName to my cleanupValue(trackName)
+        set trackArtist to my cleanupValue(trackArtist)
+        set trackAlbum to my cleanupValue(trackAlbum)
+        return "${PLAYER_STATES.PAUSED}${SCRIPT_DELIMITER}" & trackArtist & "${SCRIPT_DELIMITER}" & trackName & "${SCRIPT_DELIMITER}" & trackAlbum & "${SCRIPT_DELIMITER}" & trackDuration & "${SCRIPT_DELIMITER}" & trackPosition
+      end if
       return "${PLAYER_STATES.STOPPED}"
     end if
     set trackName to name of current track
@@ -164,44 +200,45 @@ end cleanupValue
     const { stdout } = await execFileAsync('osascript', ['-e', appleScript]);
     const normalized = stdout.trim();
     if (!normalized || normalized === PLAYER_STATES.STOPPED) {
-      return null;
+      return { state: PLAYER_STATES.STOPPED, track: null };
     }
 
     const [state, artist, title, album, duration, position] = normalized.split(SCRIPT_DELIMITER);
-    if (state !== PLAYER_STATES.PLAYING) {
-      return null;
+    if (state !== PLAYER_STATES.PLAYING && state !== PLAYER_STATES.PAUSED) {
+      return { state: PLAYER_STATES.STOPPED, track: null };
     }
     if (isSpotifyAdvertisement(artist, title, album)) {
-      return null;
+      return { state: PLAYER_STATES.STOPPED, track: null };
     }
     return {
-      source: 'spotify',
-      artist: artist || 'Unknown Artist',
-      title: title || 'Unknown Track',
-      album: album || '',
-      durationMs: toMilliseconds(duration, 1),
-      positionMs: toMilliseconds(position, 1000),
+      state,
+      track: {
+        source: 'spotify',
+        artist: artist || 'Unknown Artist',
+        title: title || 'Unknown Track',
+        album: album || '',
+        durationMs: toMilliseconds(duration, 1),
+        positionMs: toMilliseconds(position, 1000),
+      },
     };
   } catch (error) {
     console.error('Failed to read Spotify track:', error.message);
-    return null;
+    return { state: PLAYER_STATES.STOPPED, track: null };
   }
 }
 
-function formatStatus(track) {
-  const cleanArtist = sanitizeText(track.artist);
-  const cleanTitle = sanitizeText(track.title);
-  const cleanAlbum = sanitizeText(track.album);
-
-  let text = `${cleanArtist} — ${cleanTitle}`;
-  if (INCLUDE_ALBUM && cleanAlbum) {
-    text += ` (${cleanAlbum})`;
-  }
-  const progressBar = STATUS_EMOJI.includes('%pb%')
-    ? buildProgressBar(track.positionMs, track.durationMs)
-    : '';
-  const progressPrefix = progressBar ? `${progressBar} ` : '';
-  return clampStatusText(`${progressPrefix}${STATUS_PREFIX}${text}${STATUS_SUFFIX}`.trim());
+function formatStatusText(track, formatTemplate) {
+  const cleanTrack = track
+    ? {
+      artist: sanitizeText(track.artist),
+      title: sanitizeText(track.title),
+      album: sanitizeText(track.album),
+      positionMs: track.positionMs,
+      durationMs: track.durationMs,
+    }
+    : null;
+  const formatted = applyFormat(formatTemplate, cleanTrack);
+  return clampStatusText(formatted.trim());
 }
 
 async function updateSlackStatus(statusText, statusEmoji) {
@@ -324,6 +361,56 @@ function sanitizeText(value) {
   return value.replace(/\\s+/g, ' ').trim();
 }
 
+function buildDefaultFormat() {
+  const base = '%ar% — %so%';
+  if (STATUS_EMOJI.includes('%pb%')) {
+    return `%pb% ${base}`.trim();
+  }
+  return base;
+}
+
+function parseFormat(format) {
+  let playing = format;
+  let paused = null;
+  let quiet = null;
+  playing = playing.replace(/\{p\}([\s\S]*?)\{\/p\}/gi, (match, inner) => {
+    if (paused === null) {
+      paused = inner;
+    }
+    return '';
+  });
+  playing = playing.replace(/\{q\}([\s\S]*?)\{\/q\}/gi, (match, inner) => {
+    if (quiet === null) {
+      quiet = inner;
+    }
+    return '';
+  });
+  return {
+    playing: playing.trim(),
+    paused: paused !== null ? paused : null,
+    quiet: quiet !== null ? quiet : null,
+  };
+}
+
+function applyFormat(template, track) {
+  if (!template) {
+    return '';
+  }
+  const values = {
+    '%ar%': track ? track.artist : '',
+    '%al%': track ? track.album : '',
+    '%so%': track ? track.title : '',
+    '%pb%': track ? buildProgressBar(track.positionMs, track.durationMs) : '',
+    '%bn%': '\u266B',
+    '%en%': '\u266A',
+  };
+  let output = template;
+  Object.entries(values).forEach(([token, value]) => {
+    output = output.split(token).join(value);
+  });
+  return output;
+}
+
 function toMilliseconds(value, multiplier) {
   const parsed = Number.parseFloat(value);
   if (!Number.isFinite(parsed)) {
@@ -341,7 +428,7 @@ function buildProgressBar(positionMs, durationMs) {
   const index = Math.floor(ratio * (slots - 1));
   const chars = Array.from({ length: slots }, () => '-');
   chars[index] = '|';
-  return `[${chars.join('')}]`;
+  return chars.join('');
 }
 
 function isSpotifyAdvertisement(artist, title, album) {
@@ -656,16 +743,37 @@ async function main() {
       ? 'Spotify'
       : 'Apple Music';
   console.log(`Watching ${playerLabel} every ${POLL_INTERVAL_MS}ms...`);
+  const formatConfig = parseFormat(STATUS_FORMAT || buildDefaultFormat());
+  const statusEmoji = STATUS_EMOJI.replace(/%pb%/g, '').trim();
 
   while (true) {
     try {
-      const track = await readCurrentTrack();
-      const statusEmoji = STATUS_EMOJI.replace(/%pb%/g, '').trim();
-      const payload = track
-        ? { status_text: formatStatus(track), status_emoji: statusEmoji }
-        : CLEAR_STATUS_ON_PAUSE
-          ? { status_text: '', status_emoji: '' }
-          : null;
+      const playback = await readCurrentTrack();
+      const track = playback.track;
+      let payload = null;
+
+      if (playback.state === PLAYER_STATES.PLAYING) {
+        payload = {
+          status_text: formatStatusText(track, formatConfig.playing),
+          status_emoji: statusEmoji,
+        };
+      } else if (playback.state === PLAYER_STATES.PAUSED) {
+        if (formatConfig.paused !== null) {
+          payload = {
+            status_text: formatStatusText(track, formatConfig.paused),
+            status_emoji: statusEmoji,
+          };
+        } else if (CLEAR_STATUS_ON_PAUSE) {
+          payload = { status_text: '', status_emoji: '' };
+        }
+      } else if (formatConfig.quiet !== null) {
+        payload = {
+          status_text: formatStatusText(track, formatConfig.quiet),
+          status_emoji: statusEmoji,
+        };
+      } else if (CLEAR_STATUS_ON_PAUSE) {
+        payload = { status_text: '', status_emoji: '' };
+      }
 
       if (payload && !payloadsEqual(payload, lastPayload)) {
         if (DRY_RUN) {
