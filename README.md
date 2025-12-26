@@ -17,12 +17,12 @@ This project is a modern take on my old Pidgin-CurrentTrack plugin for Gaim/Pidg
 
 - macOS with Apple Music or Spotify
 - Node.js 16+ (ships with the script)
-- A Slack app installed to your workspace with the `users.profile:write` scope and a user token (starts with `xoxp-…`)
+- A Slack app installed to your workspace with the `users.profile:write` & `users.profile:read` scopes and a user token (starts with `xoxp-…`)
 
 ## Setup
 
 1. [Create a Slack app](https://api.slack.com/apps) or use an existing one tied to your Slack account.
-2. Under **OAuth & Permissions** add the `users.profile:write` user scope.
+2. Under **OAuth & Permissions** add the `users.profile:write` & `users.profile:read` user scopes.
 3. Install the app in your workspace and copy the resulting user token.
 4. Clone this repository and run the script with the token exported as an environment variable:
 
